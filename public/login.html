@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoQuiz - Login Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 420px;
+            padding: 3rem;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .logo p {
+            color: #6b7280;
+            font-size: 0.95rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #374151;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 1rem;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-error {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            color: #16a34a;
+            border: 1px solid #bbf7d0;
+        }
+
+        .alert-info {
+            background: #eff6ff;
+            color: #2563eb;
+            border: 1px solid #bfdbfe;
+        }
+
+        .setup-mode {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: #eff6ff;
+            border-radius: 8px;
+            color: #2563eb;
+            font-size: 0.9rem;
+        }
+
+        .setup-mode strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: 1rem;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            color: #6b7280;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>🚀 AutoQuiz</h1>
+            <p>Panel de Administración</p>
+        </div>
+
+        <div id="setup-notice" class="setup-mode" style="display: none;">
+            <strong>🔧 Configuración Inicial</strong>
+            Crea tu cuenta de administrador
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Correo Electrónico</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="admin@ejemplo.com"
+                    required
+                    autocomplete="email"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Contraseña</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="••••••••"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <button type="submit" class="btn-login" id="submit-btn">
+                Iniciar Sesión
+            </button>
+        </form>
+
+        <div class="footer">
+            AutoQuiz Server v24.2 - Multi-Usuario
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('login-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const alertBox = document.getElementById('alert');
+        const setupNotice = document.getElementById('setup-notice');
+
+        // Verificar si es primera vez (setup mode)
+        async function checkSetupMode() {
+            try {
+                const response = await fetch('/api/admin/check');
+                const data = await response.json();
+                
+                if (!data.hasAdmin) {
+                    setupNotice.style.display = 'block';
+                    submitBtn.textContent = 'Crear Cuenta Admin';
+                }
+            } catch (error) {
+                console.error('Error al verificar modo setup:', error);
+            }
+        }
+
+        function showAlert(message, type) {
+            alertBox.textContent = message;
+            alertBox.className = `alert alert-${type} show`;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    alertBox.classList.remove('show');
+                }, 2000);
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                showAlert('Por favor completa todos los campos', 'error');
+                return;
+            }
+
+            if (password.length < 6) {
+                showAlert('La contraseña debe tener al menos 6 caracteres', 'error');
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Procesando...';
+            
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showAlert(data.message || 'Inicio de sesión exitoso', 'success');
+                    
+                    // Guardar token en sessionStorage
+                    sessionStorage.setItem('adminToken', data.token);
+                    
+                    // Redirigir al dashboard
+                    setTimeout(() => {
+                        window.location.href = '/dashboard/static/dashboard.html';
+                    }, 500);
+                } else {
+                    showAlert(data.error || 'Error al iniciar sesión', 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = setupNotice.style.display === 'block' 
+                        ? 'Crear Cuenta Admin' 
+                        : 'Iniciar Sesión';
+                }
+            } catch (error) {
+                showAlert('Error de conexión con el servidor', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = setupNotice.style.display === 'block' 
+                    ? 'Crear Cuenta Admin' 
+                    : 'Iniciar Sesión';
+            }
+        });
+
+        // Verificar modo setup al cargar
+        checkSetupMode();
+    </script>
+</body>
+</html>

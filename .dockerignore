@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.env
+.git
+.gitignore
+*.md
+test-results
+auth-state.json
+google-auth.json
+microsoft-auth.json
+server-config.json
+*.bak
+*.zip
+*.tar.gz
+.DS_Store
