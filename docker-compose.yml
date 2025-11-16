@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     image: autoquiz-server:latest
     restart: unless-stopped
+    volumes:
+      - ./public:/app/public
+      - ./auth-state.json:/app/auth-state.json
     environment:
       - REBUILD_TRIGGER=v2
       - PORT=3000

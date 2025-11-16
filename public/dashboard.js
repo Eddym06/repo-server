@@ -9,6 +9,7 @@ let ws = null; // WebSocket para logs en tiempo real
 let currentUserId = null;
 let activityChart = null;
 let tokensChart = null;
+let modelsChart = null;
 let adminToken = null;
 
 // ===== AUTENTICACIÓN =====
@@ -16,26 +17,36 @@ function checkAuth() {
     adminToken = sessionStorage.getItem('adminToken');
     
     if (!adminToken) {
-        window.location.href = '/dashboard';
+        // Redirigir a login si no hay token
+        window.location.href = '/login.html';
         return false;
     }
     
-    // Verificar que el token es válido
-    fetch(`${API_BASE}/api/admin/verify`, {
-        headers: { 'Authorization': `Bearer ${adminToken}` }
-    })
-    .then(res => {
-        if (!res.ok) {
-            sessionStorage.removeItem('adminToken');
-            window.location.href = '/dashboard';
-        }
-    })
-    .catch(() => {
-        sessionStorage.removeItem('adminToken');
-        window.location.href = '/dashboard';
-    });
+    // Verificar token con el servidor
+    verifyToken();
     
     return true;
+}
+
+async function verifyToken() {
+    try {
+        const response = await fetch('/api/admin/verify', {
+            headers: {
+                'Authorization': `Bearer ${adminToken}`
+            }
+        });
+        
+        if (!response.ok) {
+            // Token inválido, redirigir a login
+            console.warn('Token inválido o sesión expirada, redirigiendo a login...');
+            sessionStorage.removeItem('adminToken');
+            sessionStorage.removeItem('adminUser');
+            window.location.href = '/login.html';
+        }
+    } catch (error) {
+        console.error('Error verificando token:', error);
+        // No redirigir en caso de error de red, permitir que el usuario siga intentando
+    }
 }
 
 function getAuthHeaders() {
@@ -46,18 +57,9 @@ function getAuthHeaders() {
 }
 
 function logout() {
-    fetch(`${API_BASE}/api/admin/logout`, {
-        method: 'POST',
-        headers: getAuthHeaders()
-    })
-    .then(() => {
-        sessionStorage.removeItem('adminToken');
-        window.location.href = '/dashboard';
-    })
-    .catch(() => {
-        sessionStorage.removeItem('adminToken');
-        window.location.href = '/dashboard';
-    });
+    sessionStorage.removeItem('adminToken');
+    sessionStorage.removeItem('adminUser');
+    window.location.href = '/login.html';
 }
 
 // ===== INICIALIZACIÓN =====
@@ -68,19 +70,44 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initModals();
     initWebSocket();
+    initEventDelegation();
+    initConsoleListeners();
     loadDashboard();
     
     // Refresh automático cada 30 segundos
     setInterval(loadDashboard, 30000);
     
     // Botón de refresh manual
-    document.getElementById('refresh-btn').addEventListener('click', () => {
-        loadDashboard();
-        animateRefreshButton();
-    });
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            loadDashboard();
+            animateRefreshButton();
+        });
+    }
     
     // Botón de logout
-    document.getElementById('logout-btn').addEventListener('click', logout);
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', logout);
+    }
+    
+    // Filtros de informes - con verificación de elementos
+    const searchInput = document.getElementById('reports-search');
+    const modelFilter = document.getElementById('reports-model-filter');
+    const userFilter = document.getElementById('reports-user-filter');
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', filterReports);
+    }
+    
+    if (modelFilter) {
+        modelFilter.addEventListener('change', filterReports);
+    }
+    
+    if (userFilter) {
+        userFilter.addEventListener('change', filterReports);
+    }
 });
 
 // ===== NAVEGACIÓN =====
@@ -99,6 +126,51 @@ function initNavigation() {
     });
 }
 
+// ===== EVENT DELEGATION =====
+function initEventDelegation() {
+    // Event delegation para user cards y botones
+    document.addEventListener('click', (e) => {
+        // Click en user card
+        const userCard = e.target.closest('.user-card');
+        if (userCard && !e.target.closest('.user-actions')) {
+            const userId = parseInt(userCard.dataset.userId);
+            if (userId) {
+                showUserDetail(userId);
+            }
+            return;
+        }
+        
+        // Click en botón de toggle status
+        const toggleBtn = e.target.closest('.toggle-status-btn');
+        if (toggleBtn) {
+            e.stopPropagation();
+            const userId = parseInt(toggleBtn.dataset.userId);
+            if (userId) {
+                // Crear un evento sintético para pasar a toggleUserStatus
+                const syntheticEvent = { stopPropagation: () => {} };
+                toggleUserStatus(syntheticEvent, userId);
+            }
+            return;
+        }
+        
+        // Click en botón de delete report
+        const deleteBtn = e.target.closest('.delete-report-btn');
+        if (deleteBtn) {
+            const reportId = parseInt(deleteBtn.dataset.reportId);
+            deleteReportConfirm(reportId);
+            return;
+        }
+        
+        // Click en botón de view report
+        const viewBtn = e.target.closest('.view-report-btn');
+        if (viewBtn) {
+            const reportId = parseInt(viewBtn.dataset.reportId);
+            viewReportDetail(reportId);
+            return;
+        }
+    });
+}
+
 function switchView(viewName) {
     // Ocultar todas las vistas
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -112,7 +184,8 @@ function switchView(viewName) {
         dashboard: { title: 'Dashboard', subtitle: 'Estadísticas generales del sistema' },
         users: { title: 'Gestión de Usuarios', subtitle: 'Administrar usuarios de la extensión' },
         errors: { title: 'Registro de Errores', subtitle: 'Monitoreo de errores del sistema' },
-        sessions: { title: 'Sesiones Activas', subtitle: 'Cuestionarios en progreso' }
+        sessions: { title: 'Sesiones Activas', subtitle: 'Cuestionarios en progreso' },
+        reports: { title: 'Informes', subtitle: 'Historial de cuestionarios completados' }
     };
     
     document.getElementById('page-title').textContent = titles[viewName].title;
@@ -132,26 +205,52 @@ function switchView(viewName) {
         case 'sessions':
             loadSessions();
             break;
+        case 'reports':
+            loadReports();
+            break;
     }
 }
 
 // ===== DASHBOARD =====
 async function loadDashboard() {
     try {
-        const [stats, users] = await Promise.all([
-            fetch(`${API_BASE}/api/stats`, { headers: getAuthHeaders() }).then(r => r.json()),
-            fetch(`${API_BASE}/api/users`, { headers: getAuthHeaders() }).then(r => r.json())
+        const [statsRes, usersRes] = await Promise.all([
+            fetch(`${API_BASE}/api/stats`, { headers: getAuthHeaders() }),
+            fetch(`${API_BASE}/api/users`, { headers: getAuthHeaders() })
         ]);
         
+        // Manejar error 401 específicamente
+        if (statsRes.status === 401 || usersRes.status === 401) {
+            console.warn('Sesión expirada o inválida, redirigiendo a login...');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!statsRes.ok || !usersRes.ok) {
+            throw new Error('Error al cargar datos del servidor');
+        }
+        
+        const stats = await statsRes.json();
+        const users = await usersRes.json();
+        
+        // Validar que users sea un array antes de usarlo
+        if (!Array.isArray(users)) {
+            console.error('La respuesta de usuarios no es un array:', users);
+            updateStatsCards(stats || {});
+            updateCharts([]);
+            return;
+        }
+        
         // Actualizar stats cards
-        updateStatsCards(stats);
+        updateStatsCards(stats || {});
         
         // Actualizar gráficos
         updateCharts(users);
         
     } catch (error) {
         console.error('Error al cargar dashboard:', error);
-        showNotification('Error al cargar datos', 'error');
+        showNotification('Error al cargar datos. Por favor, recarga la página.', 'error');
     }
 }
 
@@ -171,12 +270,18 @@ function updateStatsCards(stats) {
 }
 
 function updateCharts(users) {
+    // Validar que users sea un array
+    if (!users || !Array.isArray(users)) {
+        console.warn('updateCharts llamado sin array válido, usando array vacío');
+        users = [];
+    }
+    
     // Gráfico de actividad
     const activityData = {
-        labels: users.map(u => u.username),
+        labels: users.map(u => u.username || 'Sin nombre'),
         datasets: [{
             label: 'Cuestionarios Completados',
-            data: users.map(u => u.quizzes_completed),
+            data: users.map(u => u.quizzes_completed || 0),
             backgroundColor: 'rgba(79, 70, 229, 0.8)',
             borderColor: 'rgba(79, 70, 229, 1)',
             borderWidth: 2
@@ -207,10 +312,10 @@ function updateCharts(users) {
     
     // Gráfico de tokens
     const tokensData = {
-        labels: users.map(u => u.username),
+        labels: users.map(u => u.username || 'Sin nombre'),
         datasets: [{
             label: 'Tokens Utilizados',
-            data: users.map(u => u.total_tokens_used),
+            data: users.map(u => u.total_tokens_used || 0),
             backgroundColor: 'rgba(16, 185, 129, 0.8)',
             borderColor: 'rgba(16, 185, 129, 1)',
             borderWidth: 2
@@ -238,14 +343,91 @@ function updateCharts(users) {
             }
         });
     }
+    
+    // Gráfica de Modelos Más Usados
+    const modelUsage = {};
+    users.forEach(user => {
+        if (user.favorite_model) {
+            let brand = 'Otros';
+            if (user.favorite_model.includes('gpt')) brand = 'OpenAI';
+            else if (user.favorite_model.includes('gemini')) brand = 'Google';
+            else if (user.favorite_model.includes('grok')) brand = 'xAI';
+            else if (user.favorite_model.includes('deepseek')) brand = 'DeepSeek';
+            else if (user.favorite_model.includes('claude')) brand = 'Anthropic';
+            
+            modelUsage[brand] = (modelUsage[brand] || 0) + 1;
+        }
+    });
+
+    const modelsData = {
+        labels: Object.keys(modelUsage),
+        datasets: [{
+            data: Object.values(modelUsage),
+            backgroundColor: [
+                'rgba(79, 70, 229, 0.8)',
+                'rgba(16, 185, 129, 0.8)',
+                'rgba(239, 68, 68, 0.8)',
+                'rgba(245, 158, 11, 0.8)',
+                'rgba(168, 85, 247, 0.8)',
+                'rgba(100, 116, 139, 0.8)'
+            ]
+        }]
+    };
+
+    const ctxModels = document.getElementById('models-chart');
+    if (ctxModels) {
+        if (modelsChart) {
+            modelsChart.data = modelsData;
+            modelsChart.update();
+        } else {
+            modelsChart = new Chart(ctxModels, {
+                type: 'doughnut',
+                data: modelsData,
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: true,
+                    plugins: { 
+                        legend: { 
+                            position: 'bottom',
+                            labels: { 
+                                color: '#f8fafc',
+                                padding: 15,
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
 }
 
 // ===== USUARIOS =====
 async function loadUsers() {
     try {
-        const users = await fetch(`${API_BASE}/api/users`, { headers: getAuthHeaders() }).then(r => r.json());
+        const response = await fetch(`${API_BASE}/api/users`, { headers: getAuthHeaders() });
+        
+        if (response.status === 401) {
+            console.warn('Sesión expirada al cargar usuarios');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}`);
+        }
+        
+        const users = await response.json();
         
         const container = document.getElementById('users-list');
+        if (!container) {
+            console.error('Contenedor users-list no encontrado');
+            return;
+        }
+        
         container.innerHTML = '';
         
         users.forEach(user => {
@@ -264,7 +446,7 @@ async function loadUsers() {
 function createUserCard(user) {
     const card = document.createElement('div');
     card.className = 'user-card';
-    card.onclick = () => showUserDetail(user.id);
+    card.dataset.userId = user.id; // Usar data attribute en lugar de onclick
     
     const statusBadge = user.enabled 
         ? '<span class="badge badge-success">Activo</span>'
@@ -280,8 +462,8 @@ function createUserCard(user) {
                 <span>🪙 ${formatNumber(user.total_tokens_used)} tokens</span>
             </div>
         </div>
-        <div class="user-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-secondary" onclick="toggleUserStatus(${user.id}, ${!user.enabled})">
+        <div class="user-actions">
+            <button class="btn btn-secondary toggle-status-btn" data-user-id="${user.id}" data-enabled="${user.enabled}">
                 ${user.enabled ? '⏸️' : '▶️'}
             </button>
         </div>
@@ -323,39 +505,18 @@ async function showUserDetail(userId) {
             logsContainer.innerHTML = '<p class="logs-empty">No hay errores registrados</p>';
         }
         
-        // Actualizar botón toggle
+        // Actualizar botón toggle (usar data attribute en lugar de onclick)
         const toggleBtn = document.getElementById('toggle-user-btn');
         toggleBtn.textContent = user.enabled ? '⏸️ Inhabilitar' : '▶️ Habilitar';
-        toggleBtn.onclick = () => toggleUserStatus(userId, !user.enabled);
+        toggleBtn.dataset.userId = userId;
+        toggleBtn.dataset.enabled = user.enabled;
+        toggleBtn.className = 'btn btn-primary toggle-status-btn';
         
         // Mostrar modal
         showModal('user-detail-modal');
         
     } catch (error) {
         console.error('Error al cargar detalles del usuario:', error);
-    }
-}
-
-async function toggleUserStatus(userId, enabled) {
-    try {
-        await fetch(`${API_BASE}/api/users/${userId}/toggle`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ enabled })
-        });
-        
-        showNotification(`Usuario ${enabled ? 'habilitado' : 'inhabilitado'}`, 'success');
-        loadUsers();
-        
-        // Si el modal está abierto, cerrarlo y reabrir con datos actualizados
-        if (currentUserId === userId) {
-            closeModal('user-detail-modal');
-            setTimeout(() => showUserDetail(userId), 300);
-        }
-        
-    } catch (error) {
-        console.error('Error al cambiar estado:', error);
-        showNotification('Error al cambiar estado', 'error');
     }
 }
 
@@ -367,10 +528,22 @@ async function deleteUserConfirm() {
     }
     
     try {
-        await fetch(`${API_BASE}/api/users/${currentUserId}`, { 
+        const response = await fetch(`${API_BASE}/api/users/${currentUserId}`, { 
             method: 'DELETE',
             headers: getAuthHeaders()
         });
+        
+        if (response.status === 401) {
+            console.warn('Sesión expirada al eliminar usuario');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Error del servidor' }));
+            throw new Error(errorData.error || `Error HTTP ${response.status}`);
+        }
         
         showNotification('Usuario eliminado', 'success');
         closeModal('user-detail-modal');
@@ -379,16 +552,34 @@ async function deleteUserConfirm() {
         
     } catch (error) {
         console.error('Error al eliminar usuario:', error);
-        showNotification('Error al eliminar usuario', 'error');
+        showNotification(error.message || 'Error al eliminar usuario', 'error');
     }
 }
 
 // ===== ERRORES =====
 async function loadErrors() {
     try {
-        const errors = await fetch(`${API_BASE}/api/errors`, { headers: getAuthHeaders() }).then(r => r.json());
+        const response = await fetch(`${API_BASE}/api/errors`, { headers: getAuthHeaders() });
+        
+        if (response.status === 401) {
+            console.warn('Sesión expirada al cargar errores');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}`);
+        }
+        
+        const errors = await response.json();
         
         const container = document.getElementById('errors-list');
+        if (!container) {
+            console.error('Contenedor errors-list no encontrado');
+            return;
+        }
+        
         container.innerHTML = '';
         
         errors.forEach(error => {
@@ -420,9 +611,27 @@ function createErrorCard(error) {
 // ===== SESIONES =====
 async function loadSessions() {
     try {
-        const sessions = await fetch(`${API_BASE}/api/sessions`, { headers: getAuthHeaders() }).then(r => r.json());
+        const response = await fetch(`${API_BASE}/api/sessions`, { headers: getAuthHeaders() });
+        
+        if (response.status === 401) {
+            console.warn('Sesión expirada al cargar sesiones');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}`);
+        }
+        
+        const sessions = await response.json();
         
         const container = document.getElementById('sessions-list');
+        if (!container) {
+            console.error('Contenedor sessions-list no encontrado');
+            return;
+        }
+        
         container.innerHTML = '';
         
         if (sessions.length === 0) {
@@ -463,39 +672,64 @@ function createSessionCard(session) {
 
 // ===== CREAR USUARIO =====
 function initModals() {
+    // Prevenir múltiples inicializaciones
+    if (window.modalsInitialized) return;
+    window.modalsInitialized = true;
+    
     // Botón nuevo usuario
-    document.getElementById('new-user-btn').addEventListener('click', () => {
-        showModal('new-user-modal');
-        document.getElementById('new-username').value = '';
-    });
+    const newUserBtn = document.getElementById('new-user-btn');
+    if (newUserBtn) {
+        newUserBtn.addEventListener('click', () => {
+            showModal('new-user-modal');
+            const usernameInput = document.getElementById('new-username');
+            if (usernameInput) usernameInput.value = '';
+        });
+    }
     
     // Botón crear
-    document.getElementById('create-user-btn').addEventListener('click', createUser);
+    const createBtn = document.getElementById('create-user-btn');
+    if (createBtn) {
+        createBtn.addEventListener('click', createUser);
+    }
     
     // Botón cancelar
-    document.getElementById('cancel-user-btn').addEventListener('click', () => {
-        closeModal('new-user-modal');
-    });
+    const cancelBtn = document.getElementById('cancel-user-btn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            closeModal('new-user-modal');
+        });
+    }
     
     // Botón copiar token
-    document.getElementById('copy-token-btn').addEventListener('click', copyToken);
+    const copyBtn = document.getElementById('copy-token-btn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', copyToken);
+    }
     
     // Botón cerrar token modal
-    document.getElementById('close-token-btn').addEventListener('click', () => {
-        closeModal('token-modal');
-    });
+    const closeTokenBtn = document.getElementById('close-token-btn');
+    if (closeTokenBtn) {
+        closeTokenBtn.addEventListener('click', () => {
+            closeModal('token-modal');
+        });
+    }
     
     // Botón eliminar usuario
-    document.getElementById('delete-user-btn').addEventListener('click', deleteUserConfirm);
+    const deleteBtn = document.getElementById('delete-user-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteUserConfirm);
+    }
     
     // Cerrar modales con X o clic fuera
     document.querySelectorAll('.modal').forEach(modal => {
+        // Clic fuera del modal
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 closeModal(modal.id);
             }
         });
         
+        // Botones X de cierre
         modal.querySelectorAll('.modal-close').forEach(btn => {
             btn.addEventListener('click', () => closeModal(modal.id));
         });
@@ -517,15 +751,37 @@ async function createUser() {
             body: JSON.stringify({ username })
         });
         
+        // Validar respuesta HTTP
+        if (response.status === 401) {
+            console.warn('Sesión expirada al crear usuario');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Error del servidor' }));
+            throw new Error(errorData.error || `Error HTTP ${response.status}`);
+        }
+        
         const user = await response.json();
+        
+        // Validar que la respuesta tenga los campos necesarios
+        if (!user || !user.token || !user.identifier) {
+            throw new Error('Respuesta del servidor incompleta');
+        }
         
         // Cerrar modal de creación
         closeModal('new-user-modal');
         
         // Mostrar modal de token
-        document.getElementById('created-username').textContent = user.username;
-        document.getElementById('created-identifier').textContent = user.identifier;
-        document.getElementById('created-token').textContent = user.token;
+        const usernameEl = document.getElementById('created-username');
+        const identifierEl = document.getElementById('created-identifier');
+        const tokenEl = document.getElementById('created-token');
+        
+        if (usernameEl) usernameEl.textContent = user.username || username;
+        if (identifierEl) identifierEl.textContent = user.identifier;
+        if (tokenEl) tokenEl.textContent = user.token;
         
         showModal('token-modal');
         
@@ -535,7 +791,7 @@ async function createUser() {
         
     } catch (error) {
         console.error('Error al crear usuario:', error);
-        showNotification('Error al crear usuario', 'error');
+        showNotification(error.message || 'Error al crear usuario', 'error');
     }
 }
 
@@ -601,17 +857,33 @@ function handleWebSocketMessage(data) {
 // ===== UTILIDADES =====
 function showModal(modalId) {
     const modal = document.getElementById(modalId);
+    if (!modal) {
+        console.error(`Modal ${modalId} no encontrado`);
+        return;
+    }
     modal.classList.add('active');
-    gsap.from(modal.querySelector('.modal-content'), { scale: 0.9, opacity: 0, duration: 0.3 });
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        gsap.from(modalContent, { scale: 0.9, opacity: 0, duration: 0.3 });
+    }
 }
 
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
-    gsap.to(modal.querySelector('.modal-content'), {
-        scale: 0.9, opacity: 0, duration: 0.2, onComplete: () => {
-            modal.classList.remove('active');
-        }
-    });
+    if (!modal) {
+        console.error(`Modal ${modalId} no encontrado`);
+        return;
+    }
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        gsap.to(modalContent, {
+            scale: 0.9, opacity: 0, duration: 0.2, onComplete: () => {
+                modal.classList.remove('active');
+            }
+        });
+    } else {
+        modal.classList.remove('active');
+    }
 }
 
 function showNotification(message, type = 'info') {
@@ -636,9 +908,27 @@ function animateValue(element, start, end, duration) {
 
 function animateRefreshButton() {
     const btn = document.getElementById('refresh-btn');
-    gsap.to(btn, { rotation: 360, duration: 0.5, ease: 'power2.out', onComplete: () => {
-        gsap.set(btn, { rotation: 0 });
-    }});
+    const icon = btn.querySelector('span');
+    
+    // Animación con anime.js (rotación suave de 360 grados)
+    anime({
+        targets: icon,
+        rotate: '1turn', // 360 grados
+        duration: 800,
+        easing: 'easeOutCubic',
+        complete: function() {
+            // Reset rotation después de la animación
+            icon.style.transform = 'rotate(0deg)';
+        }
+    });
+    
+    // Efecto de pulso en el botón
+    anime({
+        targets: btn,
+        scale: [1, 0.95, 1],
+        duration: 200,
+        easing: 'easeInOutQuad'
+    });
 }
 
 function formatNumber(num) {
@@ -668,38 +958,51 @@ let consoleLineCount = 0;
 let consoleActiveFilter = 'all';
 let consoleIsStreaming = false;
 
-// Inicializar botón de consola
-document.getElementById('open-console-btn').addEventListener('click', () => {
-    if (currentUserId) {
-        openConsole(currentUserId);
+// Inicializar event listeners de la consola (llamar en DOMContentLoaded)
+function initConsoleListeners() {
+    // Botón de abrir consola
+    const openConsoleBtn = document.getElementById('open-console-btn');
+    if (openConsoleBtn) {
+        openConsoleBtn.addEventListener('click', () => {
+            if (currentUserId) {
+                openConsole(currentUserId);
+            }
+        });
     }
-});
 
-// Botones de control de la consola
-document.getElementById('console-start-btn').addEventListener('click', startConsoleStreaming);
-document.getElementById('console-stop-btn').addEventListener('click', stopConsoleStreaming);
-document.getElementById('console-clear-btn').addEventListener('click', clearConsole);
+    // Botones de control de la consola
+    const startBtn = document.getElementById('console-start-btn');
+    const stopBtn = document.getElementById('console-stop-btn');
+    const clearBtn = document.getElementById('console-clear-btn');
+    
+    if (startBtn) startBtn.addEventListener('click', startConsoleStreaming);
+    if (stopBtn) stopBtn.addEventListener('click', stopConsoleStreaming);
+    if (clearBtn) clearBtn.addEventListener('click', clearConsole);
 
-// Filtros de nivel
-document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        consoleActiveFilter = btn.dataset.level;
-        filterConsoleLogs();
+    // Filtros de nivel
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            consoleActiveFilter = btn.dataset.level;
+            filterConsoleLogs();
+        });
     });
-});
 
-// Cerrar consola
-document.getElementById('console-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'console-modal') {
-        closeConsole();
+    // Cerrar consola
+    const consoleModal = document.getElementById('console-modal');
+    if (consoleModal) {
+        consoleModal.addEventListener('click', (e) => {
+            if (e.target.id === 'console-modal') {
+                closeConsole();
+            }
+        });
+
+        consoleModal.querySelectorAll('.modal-close').forEach(btn => {
+            btn.addEventListener('click', closeConsole);
+        });
     }
-});
-
-document.getElementById('console-modal').querySelectorAll('.modal-close').forEach(btn => {
-    btn.addEventListener('click', closeConsole);
-});
+}
 
 /**
  * Abrir consola para un usuario específico
@@ -1008,4 +1311,283 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ===== DETECCIÓN DE GÉNERO POR NOMBRE =====
+function detectGender(fullName) {
+    const firstName = fullName.split(' ')[0].toLowerCase();
+    
+    const femaleNames = ['maría', 'ana', 'carmen', 'isabel', 'dolores', 'pilar', 'teresa', 
+                         'rosa', 'francisca', 'antonia', 'julia', 'laura', 'marta', 'elena', 
+                         'cristina', 'paula', 'sara', 'patricia', 'andrea', 'lucía', 'sofía', 
+                         'valentina', 'camila', 'martina', 'carla', 'daniela', 'alejandra', 'gabriela'];
+    
+    const maleNames = ['antonio', 'josé', 'manuel', 'francisco', 'juan', 'david', 'miguel', 
+                       'javier', 'daniel', 'carlos', 'rafael', 'pedro', 'jesús', 'alejandro', 
+                       'fernando', 'sergio', 'pablo', 'jorge', 'alberto', 'luis', 'roberto', 
+                       'eduardo', 'diego', 'ángel', 'adrián', 'mario', 'oscar', 'raúl', 'víctor'];
+    
+    if (femaleNames.includes(firstName)) return 'female';
+    if (maleNames.includes(firstName)) return 'male';
+    
+    if (firstName.endsWith('a') && !firstName.endsWith('ía')) {
+        return maleNames.includes(firstName) ? 'male' : 'female';
+    }
+    
+    return 'neutral';
+}
+
+// ===== TOGGLE USER STATUS =====
+async function toggleUserStatus(event, userId) {
+    event.stopPropagation();
+    
+    try {
+        // Endpoint correcto: /api/users/:id/toggle (POST)
+        const response = await fetch(`${API_BASE}/api/users/${userId}/toggle`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ enabled: true }) // El servidor togglea automáticamente
+        });
+        
+        if (response.status === 401) {
+            console.warn('Sesión expirada al cambiar estado');
+            sessionStorage.removeItem('adminToken');
+            window.location.href = '/login.html';
+            return;
+        }
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Error del servidor' }));
+            throw new Error(errorData.error || 'Error al cambiar estado');
+        }
+        
+        const data = await response.json();
+        
+        const toggle = document.getElementById(`toggle-${userId}`);
+        if (!toggle) {
+            console.warn(`Elemento toggle-${userId} no encontrado`);
+            // Recargar usuarios para actualizar UI
+            loadUsers();
+            return;
+        }
+        
+        const statusText = toggle.parentElement.querySelector('.toggle-status-text');
+        
+        if (data.user.enabled) {
+            toggle.classList.add('enabled');
+            if (statusText) {
+                statusText.classList.remove('disabled');
+                statusText.classList.add('enabled');
+                statusText.textContent = 'Habilitado';
+            }
+        } else {
+            toggle.classList.remove('enabled');
+            if (statusText) {
+                statusText.classList.remove('enabled');
+                statusText.classList.add('disabled');
+                statusText.textContent = 'Deshabilitado';
+            }
+        }
+        
+        showNotification(`Usuario ${data.user.enabled ? 'habilitado' : 'deshabilitado'} exitosamente`, 'success');
+    } catch (error) {
+        console.error('Error al cambiar estado del usuario:', error);
+        showNotification(error.message || 'Error al cambiar estado del usuario', 'error');
+    }
+}
+
+// ===== TOGGLE ERROR DETAILS =====
+function toggleErrorDetails(errorId) {
+    const errorCard = document.getElementById(`error-${errorId}`);
+    if (errorCard) {
+        errorCard.classList.toggle('expanded');
+    }
+}
+
+// ===== GESTIÓN DE INFORMES =====
+async function loadReports() {
+    try {
+        const response = await fetch('/api/reports/list', {
+            headers: getAuthHeaders()
+        });
+        
+        if (!response.ok) throw new Error('Error al cargar informes');
+        
+        const data = await response.json();
+        renderReports(data.reports || []);
+        loadUsersForFilter();
+    } catch (error) {
+        console.error('Error al cargar informes:', error);
+        showNotification('Error al cargar informes', 'error');
+        const container = document.getElementById('reports-list');
+        if (container) {
+            container.innerHTML = '<p class="empty-state">❌ Error al cargar informes</p>';
+        }
+    }
+}
+
+function renderReports(reports) {
+    const container = document.getElementById('reports-list');
+    
+    if (!container) {
+        console.warn('Elemento reports-list no encontrado');
+        return;
+    }
+    
+    if (!reports || reports.length === 0) {
+        container.innerHTML = '<p class="empty-state">📋 No hay informes disponibles</p>';
+        return;
+    }
+    
+    container.innerHTML = reports.map(report => {
+        const accuracy = report.questions_total > 0 
+            ? ((report.questions_correct / report.questions_total) * 100).toFixed(1)
+            : 0;
+        
+        return `
+            <div class="report-card">
+                <div class="report-header">
+                    <h3>${report.report_title || 'Cuestionario'}</h3>
+                    <span class="report-date">${formatDate(report.completed_at)}</span>
+                </div>
+                <div class="report-body">
+                    <div class="report-stats">
+                        <div class="stat">
+                            <span class="label">Usuario:</span>
+                            <span class="value">${report.username || 'Desconocido'}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Preguntas:</span>
+                            <span class="value">${report.questions_total}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Correctas:</span>
+                            <span class="value success">${report.questions_correct}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Fallidas:</span>
+                            <span class="value danger">${report.questions_failed}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Precisión:</span>
+                            <span class="value">${accuracy}%</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Modelo:</span>
+                            <span class="value">${report.model_used}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Tokens:</span>
+                            <span class="value">${formatNumber(report.tokens_used || 0)}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Duración:</span>
+                            <span class="value">${formatDuration(report.duration_seconds)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="report-footer">
+                    <button class="btn btn-sm btn-primary" onclick="viewReportDetails(${report.id})">
+                        👁️ Ver Detalles
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="downloadReport(${report.id})">
+                        📥 Descargar
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function viewReportDetails(reportId) {
+    alert(`Ver detalles del informe ${reportId} - En desarrollo`);
+}
+
+async function downloadReport(reportId) {
+    try {
+        const response = await fetch(`/api/reports/${reportId}`, {
+            headers: getAuthHeaders()
+        });
+        
+        if (!response.ok) throw new Error('Error al descargar informe');
+        
+        const report = await response.json();
+        const blob = new Blob([JSON.stringify(report, null, 2)], { 
+            type: 'application/json' 
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `informe-${reportId}-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showNotification('Informe descargado exitosamente', 'success');
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error al descargar informe', 'error');
+    }
+}
+
+async function loadUsersForFilter() {
+    try {
+        const response = await fetch('/api/admin/users', {
+            headers: getAuthHeaders()
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const select = document.getElementById('reports-user-filter');
+        
+        if (select) {
+            select.innerHTML = '<option value="">Todos los usuarios</option>' +
+                data.users.map(user => 
+                    `<option value="${user.id}">${user.username}</option>`
+                ).join('');
+        }
+    } catch (error) {
+        console.error('Error cargando usuarios:', error);
+    }
+}
+
+function formatDuration(seconds) {
+    if (!seconds || seconds === 0) return '0s';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    const parts = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+    
+    return parts.join(' ');
+}
+
+function filterReports() {
+    const searchInput = document.getElementById('reports-search');
+    const modelFilterSelect = document.getElementById('reports-model-filter');
+    
+    const searchText = searchInput?.value.toLowerCase() || '';
+    const modelFilter = modelFilterSelect?.value || '';
+    
+    const cards = document.querySelectorAll('.report-card');
+    
+    if (cards.length === 0) return;
+    
+    cards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        const matchSearch = text.includes(searchText);
+        const matchModel = !modelFilter || text.includes(modelFilter);
+        
+        if (matchSearch && matchModel) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }

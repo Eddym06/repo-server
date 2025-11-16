@@ -22,6 +22,9 @@
  * }
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -230,7 +233,7 @@ class SessionManager {
         setInterval(() => this.cleanExpiredSessions(), 300000);
     }
     
-    createSession(questions, answers, userId = null) {
+    createSession(questions, answers, userId = null, progress = null) {
         // Verificar límite de usuarios concurrentes
         const activeSessions = Array.from(this.sessions.values()).filter(s => !s.expired);
         if (activeSessions.length >= MAX_CONCURRENT_USERS) {
@@ -249,13 +252,17 @@ class SessionManager {
             expiresAt: Date.now() + SESSION_TIMEOUT,
             expired: false,
             questionsTotal: questions.length,
-            questionsProcessed: 0
+            questionsProcessed: 0,
+            progress: progress // ⬅️ NUEVO: Guardar progreso del quiz
         };
         
         this.sessions.set(sessionId, session);
         this.updateUserMetrics(session.userId, 'session_created');
         
         console.log(`[SESSION-MANAGER] Sesión creada: ${sessionId} | Usuario: ${session.userId} | Activas: ${activeSessions.length + 1}/${MAX_CONCURRENT_USERS}`);
+        if (progress) {
+            console.log(`[SESSION-MANAGER] Progreso registrado: ${progress.current || '?'}/${progress.total || '?'} (${progress.source})`);
+        }
         
         // Auto-expiración
         setTimeout(() => this.expireSession(sessionId), SESSION_TIMEOUT);
@@ -321,7 +328,8 @@ class SessionManager {
                 sessionsDeleted: 0,
                 questionsProcessed: 0,
                 firstSeen: Date.now(),
-                lastSeen: Date.now()
+                lastSeen: Date.now(),
+                modelUsage: {} // ⬅️ NUEVO: Contador de uso por modelo { 'gpt-4o': 5, 'gemini-2.5-flash': 3 }
             });
         }
         
@@ -342,6 +350,42 @@ class SessionManager {
                 metrics.questionsProcessed++;
                 break;
         }
+    }
+    
+    // 📊 NUEVO: Función para trackear modelo usado
+    trackModelUsage(userId, model) {
+        if (!this.userMetrics.has(userId)) {
+            this.updateUserMetrics(userId, 'session_created'); // Inicializar si no existe
+        }
+        
+        const metrics = this.userMetrics.get(userId);
+        if (!metrics.modelUsage) {
+            metrics.modelUsage = {};
+        }
+        
+        metrics.modelUsage[model] = (metrics.modelUsage[model] || 0) + 1;
+        console.log(`[MODEL-TRACKING] Usuario ${userId}: ${model} usado ${metrics.modelUsage[model]} veces`);
+    }
+    
+    // 📊 NUEVO: Obtener modelo favorito de un usuario
+    getFavoriteModel(userId) {
+        const metrics = this.userMetrics.get(userId);
+        if (!metrics || !metrics.modelUsage || Object.keys(metrics.modelUsage).length === 0) {
+            return null;
+        }
+        
+        // Encontrar el modelo con más usos
+        let favoriteModel = null;
+        let maxUses = 0;
+        
+        for (const [model, uses] of Object.entries(metrics.modelUsage)) {
+            if (uses > maxUses) {
+                maxUses = uses;
+                favoriteModel = model;
+            }
+        }
+        
+        return favoriteModel;
     }
     
     getActiveUsers() {
@@ -655,6 +699,7 @@ async function processBatch(questionBatch, optimizedImage, systemPrompt, model, 
     const isGPT5Mini = model && model.toLowerCase().includes('gpt-5-mini');
     const isGrok = model && model.toLowerCase().includes('grok');
     const isDeepSeek = model && (model.toLowerCase().includes('deepseek') || model === 'deepseek-chat' || model === 'deepseek-reasoner');
+    const isClaude = model && model.toLowerCase().includes('claude');
     
     const userContent = [
         { type: 'text', text: `Resuelve este cuestionario: ${JSON.stringify(questionBatch)}` },
@@ -676,6 +721,8 @@ async function processBatch(questionBatch, optimizedImage, systemPrompt, model, 
         payload.max_output_tokens = 5000; // 5K tokens de salida para Grok (2M contexto)
     } else if (isDeepSeek) {
         payload.max_tokens = 8000; // DeepSeek soporta hasta 8K tokens de salida
+    } else if (isClaude) {
+        payload.max_tokens = 8192; // Claude Haiku soporta hasta 8K tokens de salida (1M contexto)
     } else {
         payload.max_tokens = 4096;
     }
@@ -815,15 +862,30 @@ async function processBatch(questionBatch, optimizedImage, systemPrompt, model, 
                         apiUrl = 'https://api.x.ai/v1/chat/completions';
                     } else if (isDeepSeek) {
                         apiUrl = 'https://api.deepseek.com/chat/completions';
+                    } else if (isClaude) {
+                        apiUrl = 'https://api.anthropic.com/v1/messages';
                     }
                     
                     const resp = await fetch(apiUrl, {
                         method: 'POST',
-                        headers: { 
+                        headers: isClaude ? {
+                            'x-api-key': apiKey,
+                            'anthropic-version': '2023-06-01',
+                            'Content-Type': 'application/json'
+                        } : { 
                             'Authorization': `Bearer ${apiKey}`, 
                             'Content-Type': 'application/json' 
                         },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(isClaude ? {
+                            model: model,
+                            max_tokens: payload.max_tokens,
+                            messages: [
+                                {
+                                    role: 'user',
+                                    content: `${systemPrompt}\n\n${JSON.stringify(questionBatch)}`
+                                }
+                            ]
+                        } : payload)
                     });
                     return { response: resp, postDelay: gateResult.postDelay };
                 });
@@ -860,17 +922,28 @@ async function processBatch(questionBatch, optimizedImage, systemPrompt, model, 
             }
             
             // Parsear respuesta según la API
+            let answerText;
             if (!isGemini) {
-                // Ya tenemos 'data' del bloque OpenAI
-                if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
-                    console.error(`[BATCH ${batchIndex}] Respuesta inválida de OpenAI:`, JSON.stringify(data, null, 2));
-                    throw new Error(`Respuesta inválida de OpenAI en lote ${batchIndex}: estructura inesperada`);
+                // Claude usa formato diferente
+                if (isClaude) {
+                    if (!data.content || !data.content[0] || !data.content[0].text) {
+                        console.error(`[BATCH ${batchIndex}] Respuesta inválida de Claude:`, JSON.stringify(data, null, 2));
+                        throw new Error(`Respuesta inválida de Claude en lote ${batchIndex}: estructura inesperada`);
+                    }
+                    answerText = data.content[0].text;
+                } else {
+                    // OpenAI, Grok, DeepSeek
+                    if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+                        console.error(`[BATCH ${batchIndex}] Respuesta inválida de OpenAI:`, JSON.stringify(data, null, 2));
+                        throw new Error(`Respuesta inválida de OpenAI en lote ${batchIndex}: estructura inesperada`);
+                    }
+                    answerText = data.choices[0].message.content;
                 }
                 
                 try {
-                    data = JSON.parse(data.choices[0].message.content);
+                    data = JSON.parse(answerText);
                 } catch (parseError) {
-                    console.error(`[BATCH ${batchIndex}] Error al parsear respuesta JSON:`, data.choices[0].message.content);
+                    console.error(`[BATCH ${batchIndex}] Error al parsear respuesta JSON:`, answerText);
                     data = { answers: questionBatch.map(q => ({
                         question_number: q.number,
                         answer: null,
@@ -1062,6 +1135,8 @@ NOTACIÓN MATEMÁTICA Y CIENTÍFICA:
    - Identifica correctamente fórmulas y ecuaciones
    - Respeta la notación exacta de las opciones proporcionadas
    - No simplifiques ni cambies el formato de las respuestas numéricas
+
+MUY IMPORTANTE: Cuando las preguntas sean de matematicas o físicas, debes de calcularlas internamente, y analizar cada paso de cálculo que hiciste para asegurarte que la respuesta esté bien. Siempre busca las opciones que mas se acerquen a tu respuesta, o que sean exactas.
 
 TIPOS Y FORMATOS (usa EXACTAMENTE estos formatos):
 - multichoice / checkbox: ["opción_correcta1", "opción_correcta2"] (array, incluso si es una sola). NO uses string suelto.
@@ -1339,7 +1414,12 @@ app.post('/start-quiz', async (req, res) => {
     console.log('[START-QUIZ] Iniciando nuevo cuestionario');
     console.log('[START-QUIZ] Datos recibidos:', JSON.stringify(req.body, null, 2));
     
-    const { questions, screenshotData, config, personalization } = req.body;
+    const { questions, screenshotData, config, personalization, progress } = req.body;
+    
+    // Log progreso si existe
+    if (progress) {
+        console.log('[START-QUIZ] 📊 Progreso del cuestionario:', progress);
+    }
     
     // Validar autenticación
     const userToken = req.headers['x-user-token'];
@@ -1415,8 +1495,13 @@ app.post('/start-quiz', async (req, res) => {
         
         // Usar SessionManager en lugar de createSession
         try {
-            const sessionId = sessionManager.createSession(questions, answers.answers, userId);
+            const sessionId = sessionManager.createSession(questions, answers.answers, userId, progress);
             console.log(`[START-QUIZ] Sesión creada con ID: ${sessionId} | Usuario: ${userId || 'anónimo'}`);
+            
+            // 📊 Registrar modelo usado para estadísticas de modelo favorito
+            if (userId) {
+                sessionManager.trackModelUsage(userId, config.model || 'gpt-4o');
+            }
             
             res.json({ 
                 status: 'success', 
@@ -1524,6 +1609,29 @@ app.get('/admin/sessions', (req, res) => {
     }));
     
     res.json({ sessions: allSessions });
+});
+
+// 📊 NUEVO: Endpoint para obtener modelo favorito de usuario
+app.get('/user/:userId/favorite-model', (req, res) => {
+    const { userId } = req.params;
+    
+    const favoriteModel = sessionManager.getFavoriteModel(userId);
+    const metrics = sessionManager.userMetrics.get(userId);
+    
+    if (!metrics) {
+        return res.status(404).json({ 
+            status: 'error', 
+            message: 'Usuario no encontrado' 
+        });
+    }
+    
+    res.json({
+        status: 'success',
+        userId,
+        favoriteModel: favoriteModel || 'none',
+        modelUsage: metrics.modelUsage || {},
+        totalSessions: metrics.sessionsCreated || 0
+    });
 });
 
 app.delete('/admin/sessions/:sessionId', (req, res) => {
@@ -2222,10 +2330,10 @@ const server = app.listen(PORT, HOST, () => {
     console.log('[SERVER]   GET  /api/stats     - Estadísticas globales');
     console.log('='.repeat(80));
     console.log('[SERVER] 🌍 URLs Públicas:');
-    console.log('[SERVER]   📊 Dashboard: https://autoquiz.qdf2w3.easypanel.host/dashboard');
-    console.log('[SERVER]   🔌 API Server: https://autoquiz.qdf2w3.easypanel.host');
-    console.log('[SERVER]   🧩 Extension Config: Usa "https://autoquiz.qdf2w3.easypanel.host" como SERVER_URL');
-    console.log('[SERVER]   🔧 WebSocket: wss://autoquiz.qdf2w3.easypanel.host');
+    console.log('[SERVER]   📊 Dashboard: http://185.144.156.88:3001/dashboard');
+    console.log('[SERVER]   🔌 API Server: http://185.144.156.88:3001');
+    console.log('[SERVER]   🧩 Extension Config: Usa "http://185.144.156.88:3001" como SERVER_URL');
+    console.log('[SERVER]   🔧 WebSocket: ws://185.144.156.88:3001');
     console.log('='.repeat(80));
 });
 

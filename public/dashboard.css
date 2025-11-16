@@ -867,3 +867,370 @@ body {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
 }
+
+/* ============================================
+   Toggle Switch Mejorado
+   ============================================ */
+
+.toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.toggle-wrapper:hover {
+    background: rgba(15, 23, 42, 0.8);
+}
+
+.toggle-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    background: var(--danger);
+    border-radius: 13px;
+    transition: background 0.3s;
+    cursor: pointer;
+}
+
+.toggle-switch.enabled {
+    background: var(--success);
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch.enabled .toggle-slider {
+    transform: translateX(24px);
+}
+
+.toggle-status-text {
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.toggle-status-text.enabled {
+    color: var(--success);
+}
+
+.toggle-status-text.disabled {
+    color: var(--danger);
+}
+
+/* ============================================
+   Errores Expandibles
+   ============================================ */
+
+.error-expandable {
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.error-expandable:hover {
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.error-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.error-info-left {
+    flex: 1;
+}
+
+.error-expand-icon {
+    font-size: 0.875rem;
+    transition: transform 0.3s;
+    color: var(--text-secondary);
+    margin-left: 1rem;
+}
+
+.error-expandable.expanded .error-expand-icon {
+    transform: rotate(180deg);
+}
+
+.error-details {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, padding 0.3s;
+    padding: 0;
+}
+
+.error-expandable.expanded .error-details {
+    max-height: 600px;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 0.75rem;
+}
+
+.error-log-section {
+    margin-bottom: 0.75rem;
+}
+
+.error-log-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--danger);
+}
+
+.error-log-content {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border-left: 3px solid var(--danger);
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.warning-log-title {
+    color: var(--warning);
+}
+
+.warning-log-content {
+    border-left-color: var(--warning);
+}
+
+/* ============================================
+   Vista de Informes
+   ============================================ */
+
+.reports-header {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.search-box {
+    flex: 1;
+    min-width: 250px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    transition: all 0.2s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.filters {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.filter-select {
+    padding: 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.reports-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.report-card {
+    background: var(--bg-card);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+}
+
+.report-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px var(--shadow);
+}
+
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.report-header h3 {
+    font-size: 1.125rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.report-date {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.report-body {
+    margin-bottom: 1rem;
+}
+
+.report-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+}
+
+.report-stats .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.report-stats .label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.report-stats .value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.report-stats .value.success {
+    color: var(--success);
+}
+
+.report-stats .value.danger {
+    color: var(--danger);
+}
+
+.report-footer {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+/* ============================================
+   Form Select Styling
+   ============================================ */
+
+.form-select {
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.form-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.form-select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0.5rem;
+}
+
+/* ============================================
+   Charts Grid Responsive
+   ============================================ */
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+@media (max-width: 1200px) {
+    .reports-list {
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .reports-header {
+        flex-direction: column;
+    }
+    
+    .filters {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .filter-select {
+        width: 100%;
+    }
+    
+    .reports-list {
+        grid-template-columns: 1fr;
+    }
+    
+    .report-stats {
+        grid-template-columns: 1fr;
+    }
+}

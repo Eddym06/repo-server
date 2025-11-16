@@ -9,10 +9,10 @@ const { Pool } = pg;
 // Configuración de la conexión a PostgreSQL
 const pool = new Pool({
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '7f5253d09cb2157c4921',
-    host: process.env.DB_HOST || 'n8n_postgres',
+    password: process.env.DB_PASSWORD || 'a2d27068d014beeadb8f',
+    host: process.env.DB_HOST || 'autoquiz_postgres-autoquiz',
     port: parseInt(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME || 'n8n',
+    database: process.env.DB_NAME || 'autoquiz',
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     max: 20, // Máximo de conexiones en el pool
     idleTimeoutMillis: 30000,
@@ -581,23 +581,24 @@ export async function updateAdminLastLogin(email) {
 export async function saveQuizReport(userId, reportData) {
     try {
         const result = await pool.query(
-            `INSERT INTO quiz_history (
-                user_id, session_id, questions_total, questions_correct, questions_failed,
-                tokens_used, model_used, duration_seconds, report_data, report_title, platform
+            `INSERT INTO quiz_reports (
+                user_id, session_id, report_title, platform,
+                questions_total, questions_correct, questions_failed,
+                tokens_used, model_used, duration_seconds, report_data
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id`,
             [
                 userId,
                 reportData.sessionId || null,
+                reportData.title || 'Cuestionario',
+                reportData.platform || 'Moodle',
                 reportData.totalQuestions || 0,
                 reportData.correctAnswers || 0,
                 reportData.failedAnswers || 0,
                 reportData.tokensUsed || 0,
                 reportData.modelUsed || 'unknown',
                 reportData.durationSeconds || 0,
-                JSON.stringify(reportData),
-                reportData.title || 'Cuestionario',
-                reportData.platform || 'Moodle'
+                JSON.stringify(reportData)
             ]
         );
         
@@ -616,8 +617,9 @@ export async function getUserReports(userId, limit = 50) {
     try {
         const result = await pool.query(
             `SELECT id, report_title, platform, questions_total, questions_correct, 
-                    questions_failed, duration_seconds, completed_at
-             FROM quiz_history
+                    questions_failed, tokens_used, model_used, duration_seconds, 
+                    completed_at, session_id
+             FROM quiz_reports
              WHERE user_id = $1
              ORDER BY completed_at DESC
              LIMIT $2`,
@@ -637,7 +639,7 @@ export async function getUserReports(userId, limit = 50) {
 export async function getReportById(reportId, userId) {
     try {
         const result = await pool.query(
-            `SELECT * FROM quiz_history WHERE id = $1 AND user_id = $2`,
+            `SELECT * FROM quiz_reports WHERE id = $1 AND user_id = $2`,
             [reportId, userId]
         );
         
@@ -654,7 +656,7 @@ export async function getReportById(reportId, userId) {
 export async function countUserReports(userId) {
     try {
         const result = await pool.query(
-            'SELECT COUNT(*) FROM quiz_history WHERE user_id = $1',
+            'SELECT COUNT(*) FROM quiz_reports WHERE user_id = $1',
             [userId]
         );
         
@@ -671,7 +673,7 @@ export async function countUserReports(userId) {
 export async function deleteReport(reportId, userId) {
     try {
         await pool.query(
-            'DELETE FROM quiz_history WHERE id = $1 AND user_id = $2',
+            'DELETE FROM quiz_reports WHERE id = $1 AND user_id = $2',
             [reportId, userId]
         );
         

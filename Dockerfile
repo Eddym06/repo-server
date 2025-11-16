@@ -1,16 +1,26 @@
-# Dockerfile para AutoQuiz Server
-FROM node:20-slim
+# ============================================
+# AutoQuiz Extension Server - Production Dockerfile
+# ============================================
+
+FROM node:24-alpine
 
 # Metadata
 LABEL maintainer="eddym062806@gmail.com"
-LABEL description="AutoQuiz Playwright Server para resolver cuestionarios Moodle con IA"
-LABEL version="24.1"
+LABEL description="AutoQuiz Extension Server - Multi-user API for Chrome Extensions"
+LABEL version="1.0.0"
+
+# Instalar dependencias del sistema
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    tzdata
 
 # Variables de entorno por defecto
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
-    ENABLE_LOGGING=true
+    ENABLE_LOGGING=true \
+    TZ=America/New_York
 
 # Crear directorio de trabajo
 WORKDIR /app
@@ -30,12 +40,20 @@ COPY database/ ./database/
 # Copiar archivos públicos del dashboard
 COPY public/ ./public/
 
+# Crear usuario no-root para seguridad
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+# Cambiar a usuario no-root
+USER nodejs
+
 # Exponer puerto
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/metrics', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"
+# Health check mejorado
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/dashboard', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
 # Comando para iniciar servidor
 CMD ["node", "server.js"]
