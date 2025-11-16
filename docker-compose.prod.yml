@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  autoquiz-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autoquiz-server:latest
+    container_name: autoquiz-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - NODE_ENV=production
+      - DATABASE_HOST=autoquiz_postgres-autoquiz
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=autoquiz
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=a2d27068d014beeadb8f
+      - ENABLE_LOGGING=true
+    networks:
+      - easypanel
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+networks:
+  easypanel:
+    external: true
