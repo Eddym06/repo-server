@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoQuiz - Panel de Control</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.4/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h1>🎯 AutoQuiz</h1>
+                <p>Panel de Control</p>
+            </div>
+            
+            <nav class="nav">
+                <button class="nav-item active" data-view="dashboard">
+                    <span class="icon">📊</span>
+                    <span>Dashboard</span>
+                </button>
+                <button class="nav-item" data-view="users">
+                    <span class="icon">👥</span>
+                    <span>Usuarios</span>
+                </button>
+                <button class="nav-item" data-view="errors">
+                    <span class="icon">⚠️</span>
+                    <span>Errores</span>
+                </button>
+                <button class="nav-item" data-view="sessions">
+                    <span class="icon">📝</span>
+                    <span>Sesiones</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status">
+                    <div class="status-indicator"></div>
+                    <span>Servidor activo</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h2 id="page-title">Dashboard</h2>
+                    <p id="page-subtitle">Estadísticas generales del sistema</p>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" id="new-user-btn">
+                        <span>➕</span>
+                        Nuevo Usuario
+                    </button>
+                    <button class="btn btn-secondary" id="refresh-btn">
+                        <span>🔄</span>
+                    </button>
+                    <button class="btn btn-danger" id="logout-btn" title="Cerrar Sesión">
+                        <span>🚪</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view active">
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <p class="stat-label">Total Usuarios</p>
+                            <h3 class="stat-value" id="stat-users">0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <p class="stat-label">Cuestionarios Completados</p>
+                            <h3 class="stat-value" id="stat-quizzes">0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🎯</div>
+                        <div class="stat-info">
+                            <p class="stat-label">Preguntas Procesadas</p>
+                            <h3 class="stat-value" id="stat-questions">0</h3>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🪙</div>
+                        <div class="stat-info">
+                            <p class="stat-label">Tokens Utilizados</p>
+                            <h3 class="stat-value" id="stat-tokens">0</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>Actividad de Usuarios</h3>
+                        <canvas id="activity-chart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Uso de Tokens</h3>
+                        <canvas id="tokens-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users View -->
+            <div id="users-view" class="view">
+                <div class="users-list" id="users-list">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Errors View -->
+            <div id="errors-view" class="view">
+                <div class="errors-list" id="errors-list">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Sessions View -->
+            <div id="sessions-view" class="view">
+                <div class="sessions-list" id="sessions-list">
+                    <!-- Se llenará dinámicamente -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Nuevo Usuario -->
+    <div id="new-user-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Crear Nuevo Usuario</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="new-username">Nombre de Usuario</label>
+                    <input type="text" id="new-username" placeholder="Ej: Juan Pérez">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-user-btn">Cancelar</button>
+                <button class="btn btn-primary" id="create-user-btn">Crear Usuario</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Token Generado -->
+    <div id="token-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✅ Usuario Creado Exitosamente</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="token-info">
+                    <p><strong>Usuario:</strong> <span id="created-username"></span></p>
+                    <p><strong>Identificador:</strong> <code id="created-identifier"></code></p>
+                    <div class="token-box">
+                        <p><strong>Token de Autenticación:</strong></p>
+                        <div class="token-display">
+                            <code id="created-token"></code>
+                            <button class="btn-copy" id="copy-token-btn">📋 Copiar</button>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning">
+                        ⚠️ <strong>Importante:</strong> Guarda este token. Solo se mostrará una vez.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="close-token-btn">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Detalles de Usuario -->
+    <div id="user-detail-modal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>👤 <span id="detail-username"></span></h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-grid">
+                    <div class="detail-section">
+                        <h3>Información General</h3>
+                        <p><strong>Identificador:</strong> <code id="detail-identifier"></code></p>
+                        <p><strong>Estado:</strong> <span id="detail-status"></span></p>
+                        <p><strong>Registrado:</strong> <span id="detail-created"></span></p>
+                        <p><strong>Última actividad:</strong> <span id="detail-activity"></span></p>
+                    </div>
+                    <div class="detail-section">
+                        <h3>Métricas</h3>
+                        <p><strong>Cuestionarios completados:</strong> <span id="detail-quizzes"></span></p>
+                        <p><strong>Preguntas procesadas:</strong> <span id="detail-questions"></span></p>
+                        <p><strong>Tokens utilizados:</strong> <span id="detail-tokens"></span></p>
+                        <p><strong>Errores totales:</strong> <span id="detail-errors"></span></p>
+                    </div>
+                </div>
+                <div class="logs-section">
+                    <h3>Logs en Tiempo Real</h3>
+                    <div class="logs-container" id="user-logs">
+                        <p class="logs-empty">Esperando actividad...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-success" id="open-console-btn">🖥️ Abrir Consola</button>
+                <button class="btn btn-danger" id="delete-user-btn">🗑️ Eliminar Usuario</button>
+                <button class="btn btn-secondary" id="toggle-user-btn">🔄 Inhabilitar</button>
+                <button class="btn btn-primary modal-close">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Consola en Tiempo Real -->
+    <div id="console-modal" class="modal">
+        <div class="modal-content modal-xlarge">
+            <div class="modal-header">
+                <div class="console-header-left">
+                    <h2>🖥️ Consola de Logs</h2>
+                    <span class="console-user-label" id="console-user-label">Usuario: <code id="console-username">-</code></span>
+                </div>
+                <div class="console-header-right">
+                    <button class="btn btn-sm btn-success" id="console-start-btn">▶️ Iniciar</button>
+                    <button class="btn btn-sm btn-danger" id="console-stop-btn" disabled>⏸️ Pausar</button>
+                    <button class="btn btn-sm btn-secondary" id="console-clear-btn">🗑️ Limpiar</button>
+                    <button class="modal-close">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body console-body">
+                <div class="console-filters">
+                    <label class="filter-label">Filtros:</label>
+                    <button class="filter-btn active" data-level="all">Todos</button>
+                    <button class="filter-btn" data-level="INFO">INFO</button>
+                    <button class="filter-btn" data-level="WARN">WARN</button>
+                    <button class="filter-btn" data-level="ERROR">ERROR</button>
+                    <button class="filter-btn" data-level="DEBUG">DEBUG</button>
+                    <div class="console-status">
+                        <span class="status-indicator" id="console-status-indicator"></span>
+                        <span id="console-status-text">Desconectado</span>
+                    </div>
+                </div>
+                <div class="console-output" id="console-output">
+                    <div class="console-welcome">
+                        <p>🖥️ <strong>Consola de Logs en Tiempo Real</strong></p>
+                        <p>Presiona <strong>"Iniciar"</strong> para comenzar a recibir logs de la extensión del usuario.</p>
+                        <p>Los logs aparecerán aquí en tiempo real mientras el usuario utiliza AutoQuiz.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="console-info">
+                    <span>Líneas: <strong id="console-line-count">0</strong></span>
+                    <span>Última actualización: <strong id="console-last-update">-</strong></span>
+                </div>
+                <button class="btn btn-primary modal-close">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
