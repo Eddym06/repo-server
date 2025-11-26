@@ -1563,7 +1563,7 @@ app.get('/metrics', (req, res) => {
     res.json({
         timestamp: new Date().toISOString(),
         server: {
-            version: '24.1-MultiUser',
+            version: 'v27.0.0-Secure',
             uptime: process.uptime(),
             node_version: process.version
         },
