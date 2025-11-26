@@ -1,7 +1,7 @@
 /**
  * @file server_ge.js
- * @description v24.1 - Enhanced Orchestrator Server with Robust AI Response Normalization
- * 
+ * @description v27.0.0-Secure - Enhanced Orchestrator Server with Robust AI Response Normalization
+ *
  * ARCHITECTURE:
  * - Robust response normalization for multiple AI response formats
  * - Enhanced error handling with retries
@@ -2300,7 +2300,7 @@ function broadcastToWebSocketClients(data) {
 // --- SERVER START ---
 const server = app.listen(PORT, HOST, () => {
     console.log('='.repeat(80));
-    console.log(`[SERVER] 🚀 AutoQuiz Pro Server [v24.1-MultiUser] READY`);
+    console.log(`[SERVER] 🚀 AutoQuiz Pro Server [v27.0.0-Secure] READY`);
     console.log(`[SERVER] 🌐 Listening on: http://${HOST}:${PORT}`);
     console.log('='.repeat(80));
     console.log('[SERVER] 📦 Enhanced Features:');
@@ -2433,3 +2433,78 @@ wss.on('connection', (ws, req) => {
         timestamp: new Date().toISOString()
     }));
 });
+
+// --- GRACEFUL SHUTDOWN ---
+const gracefulShutdown = async (signal) => {
+    console.log(`\n[SERVER] 🛑 ${signal} received. Starting graceful shutdown...`);
+    
+    // Cerrar servidor HTTP
+    server.close(() => {
+        console.log('[SERVER] ✅ HTTP server closed');
+    });
+    
+    // Cerrar WebSocket server
+    wss.clients.forEach((client) => {
+        client.close();
+    });
+    wss.close(() => {
+        console.log('[SERVER] ✅ WebSocket server closed');
+    });
+    
+    // Cerrar pool de base de datos
+    try {
+        await db.closePool();
+        console.log('[SERVER] ✅ Database pool closed');
+    } catch (error) {
+        console.error('[SERVER] ❌ Error closing database pool:', error);
+    }
+    
+    console.log('[SERVER] 👋 Shutdown complete. Goodbye!');
+    process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// --- CLEANUP JOBS ---
+
+// Limpieza de logs antiguos cada 60 segundos
+setInterval(async () => {
+    try {
+        const deleted = await db.cleanOldLogs();
+        if (deleted > 0) {
+            console.log(`[CLEANUP] 🧹 Deleted ${deleted} old log entries`);
+        }
+    } catch (error) {
+        console.error('[CLEANUP] ❌ Error cleaning old logs:', error);
+    }
+}, 60000);
+
+// Limpieza de sesiones inactivas cada 5 minutos
+setInterval(async () => {
+    try {
+        const cleaned = sessionManager.cleanupSessions();
+        if (cleaned > 0) {
+            console.log(`[CLEANUP] 🧹 Cleaned up ${cleaned} inactive sessions`);
+        }
+    } catch (error) {
+        console.error('[CLEANUP] ❌ Error cleaning sessions:', error);
+    }
+}, 300000);
+
+// Actualización de métricas del sistema cada 30 segundos
+setInterval(async () => {
+    try {
+        const activeSessions = sessionManager.getActiveSessionsCount();
+        const totalSessions = sessionManager.sessions.size;
+        
+        if (activeSessions > 0) {
+            console.log(`[METRICS] 📊 Active sessions: ${activeSessions}/${totalSessions}`);
+        }
+    } catch (error) {
+        console.error('[METRICS] ❌ Error updating metrics:', error);
+    }
+}, 30000);
+
+console.log('[SERVER] ⏰ Cleanup jobs scheduled');
+console.log('[SERVER] ✨ All systems operational');
