@@ -306,20 +306,24 @@ class SessionManager {
     cleanExpiredSessions() {
         const now = Date.now();
         let cleaned = 0;
-        
+
         for (const [sessionId, session] of this.sessions.entries()) {
             if (session.expired || now > session.expiresAt) {
                 this.sessions.delete(sessionId);
                 cleaned++;
             }
         }
-        
+
         if (cleaned > 0) {
             console.log(`[SESSION-MANAGER] Limpieza automática: ${cleaned} sesiones eliminadas`);
         }
+
+        return cleaned;
     }
-    
-    updateUserMetrics(userId, event) {
+
+    cleanupSessions() {
+        return this.cleanExpiredSessions();
+    }    updateUserMetrics(userId, event) {
         if (!this.userMetrics.has(userId)) {
             this.userMetrics.set(userId, {
                 userId,
@@ -391,6 +395,10 @@ class SessionManager {
     getActiveUsers() {
         const activeSessions = Array.from(this.sessions.values()).filter(s => !s.expired);
         return activeSessions.length;
+    }
+
+    getActiveSessionsCount() {
+        return this.getActiveUsers();
     }
     
     getMetrics() {
